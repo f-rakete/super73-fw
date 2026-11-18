@@ -97,9 +97,11 @@ UICR ships separately in `uicr.bin` (maps at 0x10001000). FWID 0x00A5 → an S13
 ### GD32 controller image (`GD_S73Rx_H104_S410EU_20221020.bin`)
 - `GD` = **GigaDevice GD32** (STM32-clone Cortex-M). Vector table at file start: SP `0x200008b8`,
   reset `0x08003900` → loads in the **0x08000000** flash family (confirm exact base in Ghidra via
-  handler-target alignment). 26 KB bare-metal app; paired `.dat` is the init packet for the BLE/EXT1
-  flash path — an **8-bit checksum, not a crypto signature** (the controller has no signature
-  verification; see "Update authenticity" below). HW 104, SW 410 EU, built 2022-10-20.
+  handler-target alignment). 26 KB bare-metal app; paired `.dat` is a Nordic Secure-DFU **signed init
+  packet**: a 32-byte SHA-256 of the image (stored byte-reversed — verified `== reverse(sha256(bin))`)
+  **plus a 64-byte ECDSA P-256 signature** (`1a 40` field). It is image-specific (a patched `.bin`
+  invalidates it). Whether anything on the *controller/CAN* path verifies it is open — see "Update
+  authenticity" below. HW 104, SW 410 EU, built 2022-10-20.
 
 ### Verified stock→unlocked display diff (74 bytes, 5 ranges — matches reverse.bike's notes exactly)
 - `0x3050c` (1 B) startup mode default: stock mode 2 → unlocked US mode 4
@@ -116,13 +118,23 @@ Stock "skeleton key" block (64 B @0x7b2b4): `12b4ada6 af80b973 3080bdea da6a2ae8
    Gates *display* updates over BLE only.
 2. **App-level packages** = the **"skeleton key"** (`0x7b2b4`). Gates pushing custom *display/STM-bridge*
    firmware over BT.
-3. **nRF52 → STM32 bridge (UART `$NRF,5/6,…`) → CAN → GD32 motor controller** = **8-bit checksum only,
-   no signature.** → **A stock, unmodified display flashes patched *controller* firmware over BT** (just
-   fix the CAN IDs + 8-bit checksum). This is why reverse.bike's controller CFW "works with unmodified
-   Diamond modules". **No display mod needed to live-test controller patches.**
+3. **nRF52 → STM32 bridge (UART `$NRF,5/6,…`) → CAN → GD32 motor controller** = the controller-side
+   region verify recovered from the CAN RX RE is a **4-byte CRC** (`0x5AA` memcmp), not a signature.
+   reverse.bike's controller CFW "works with unmodified Diamond modules", indicating the *controller*
+   path does not enforce a vendor signature over the image → **no display mod needed to live-test
+   controller patches** via that path. **Caveat:** the controller package's paired `.dat` is itself a
+   Nordic signed init packet (SHA-256 + ECDSA P-256, matching the *stock* image), so a patched image
+   needs a flash path that does **not** verify that `.dat` against the image — reverse.bike flasher /
+   SWD confirmed; the stock-display `ext1`/CAN push is **unconfirmed** and must be checked before an
+   over-BT flash of patched controller firmware.
 
-(Correction: an earlier draft mislabeled `0x7b2b4` as *the* DFU signing key and implied the display
-gatekeeps controller updates — it does not. Controller flashing is uncryptographic.)
+(Corrections: (1) an earlier draft mislabeled `0x7b2b4` as *the* DFU signing key and implied the
+display gatekeeps controller updates — it does not. (2) An earlier draft called the controller `.dat`
+"an 8-bit checksum, not a crypto signature" and the controller-side check an "8-bit checksum". The
+`.dat` is in fact a signed init packet (SHA-256 + 64-byte ECDSA P-256), and the CAN-level controller
+verify is a 4-byte CRC. The practical conclusion — a patched controller image is flashable without
+forging a signature on reverse.bike's path — stands, but the mechanism was mis-stated and the
+stock-display path's enforcement is unconfirmed, not "uncryptographic".)
 
 ## Tooling: Ghidra + rea (Stage 2 ready)
 - Ghidra **12.2** extracted at `tools/ghidra-dist/ghidra_12.2_PUBLIC` (satisfies rea ≥12.1).

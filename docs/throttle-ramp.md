@@ -16,6 +16,11 @@ else if (ramp > T) ramp -= step_down      // floored 50 (US) / 20 (EU) / 100 (th
 - `T` is in internal current-command units: operational ceiling ≈ **1250** (`0x4e2`, gated by a status
   bit), thermal/battery foldback moves it `1875 / 1250 / 450 / 300`, hard saturation **`0x7fff`**.
 - A secondary pedal-path ramp (`+5`/cycle, ≤2000) also exists but is not on the throttle path.
+- **Up-ramp always uses the per-mode step.** The code is `if (ramp < target+step) ramp += step; else
+  ramp += 20`, but the outer guard already requires `ramp < target` with `step > 0`, so the inner test
+  is always true for a non-negative demand → the `+20` base branch is effectively dead on the off-road
+  throttle path. The "step 20 (base/far)" rows in the tables below are reference only, not an operative
+  regime; the stock accelerate step is always 110 (standstill) / 70 (rolling).
 
 ### Step constants (the knobs) + patch offsets (image base `0x08003000`; file off = addr − 0x3000)
 | what | value | instr addr | file off | bytes |
@@ -26,8 +31,11 @@ else if (ramp > T) ramp -= step_down      // floored 50 (US) / 20 (EU) / 100 (th
 | mode 7 rolling step | 70 (`0x46`) | `0x080060f4` | `0x30f4` | `46 22` |
 | deadzone (+250) | `0xfa` | `0x08005bb8` | `0x2bba` | `…fa…` |
 | deadzone (−250) | `0xfa` | `0x08005bde` | `0x2bde` | `fa 3b` |
-Each step/deadzone is a single imm8 (first byte of a `movs #imm`). After patching, recompute the image's
-8-bit checksum / `.dat` (no crypto signature — see FINDINGS "Update authenticity").
+Each step/deadzone is a single imm8 (first byte of a `movs #imm`). On deploy the `.dat` **cannot** be
+recomputed — it is a Nordic signed init packet (SHA-256 + 64-byte ECDSA P-256) matching the *stock*
+image and can't be re-signed. Flash via a path that does not verify it against the image (reverse.bike
+flasher / SWD confirmed; stock-display `ext1`/CAN push unconfirmed); the controller's own CAN-level
+check is a 4-byte CRC the transport recomputes. See FINDINGS "Update authenticity" / GD32 image.
 
 ## Time = cycles × loop-period
 The ramp updates in the main control step `FUN_080090f0`, which runs the chain
