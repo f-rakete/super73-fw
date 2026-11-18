@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "version": "1.0.7",
+  "target": "controller",
+  "files": {
+    "bin": {
+      "name": "GD_S73Zxl_H106_S404_EU_2026_0612.patched.bin",
+      "sha256": "49cd31aa6c9b7f0b1f30904ec89ab53258fcf1bf1cc64cf7cdc563faa7a9e6c5"
+    },
+    "dat": {
+      "name": "GD_S73Zxl_H106_S404_EU_2026_0612.dat",
+      "sha256": "b2dd58e06e023c3e3e175c4814a6afe9c95997da52d48bbbb029c8d5e59f6183"
+    }
+  },
+  "source": {
+    "name": "firmware/mc/SUPER73-ZX-MCU-404-EU-20260612/GD_S73Zxl_H106_S404_EU_2026_0612.bin",
+    "sha256": "f33cfacd327422cf501eecd54e2b8cbfb7d462c9c1a3e488a9ea0601edd612f3"
+  },
+  "provides": {
+    "controllerVersion": 405
+  }
+}

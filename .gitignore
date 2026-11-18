@@ -1,0 +1,24 @@
+# Upstream tools / separate repos (not ours; huge or independently versioned)
+/rea/
+/hasuper73/
+/super73-puck/
+/tools/
+
+# Bulky / regenerable intermediate artifacts
+/work/jadx-out/
+/work/dex/
+/work/xapk/
+/work/ghidra/proj/
+/work/apkcombo.html
+
+# Third-party app package (large; redownloadable)
+/work/*.xapk
+/work/*.zip
+
+# Downloaded firmware packages (keep the extracted images, not the zips)
+/work/firmware/*.zip
+
+# OS / editor noise
+Thumbs.db
+.DS_Store
+*.swp

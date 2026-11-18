@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "version": "1.0.0",
+  "target": "nrf",
+  "files": {
+    "flash": {
+      "name": "flash.bin",
+      "sha256": "c624a9a7cee8c637a68f258087744cca55a5807a5df9da094a114179a00f23a4"
+    },
+    "uicr": {
+      "name": "uicr.bin",
+      "sha256": "b848ead92bfdaac7fd6e898c15fa63cdb07de5f47722807faef6aabc9b46c945"
+    }
+  },
+  "source": {
+    "name": "firmware/nrf/6-221122-0/flash.bin",
+    "sha256": "5d0a25e819a20144dcdc4c9e380096d89b462db7b88f66593552907f81859865"
+  },
+  "provides": {
+    "nrfVersion": "221122"
+  }
+}
