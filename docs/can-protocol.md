@@ -7,11 +7,15 @@ the controller-side transmit code is not in our images (the reverse.bike control
 *application* only, no bootloader).
 
 ## Architecture
-The nRF52 display is the gateway. It talks to the **GigaDevice GD32 motor controller** (and other nodes)
-over **CAN bus** (standard 11-bit IDs; bus speed set at runtime — `$NRF,CAN,BAUD`), and bridges selected
-values into an internal metric store via `FUN_0002fff8(value, index)`. That store is what the BLE
-`REGISTER_NOTIFIER` / `REGISTER` characteristics serve to the app. **So most of the BLE metrics in
-`super73-puck/docs/protocol.md` are CAN telemetry, re-exposed over BLE.**
+The nRF52 display is the gateway. Per reverse.bike's update-architecture writeup the full path is
+**nRF52 app → (UART, ASCII `$NRF,5/6,…`) → STM32 bridge → CAN → GigaDevice GD32 motor controller** — i.e.
+an **STM32 bridge** does the actual CAN; the nRF52 speaks an ASCII framing to it. (The app DTO's
+`stmVersion` is this bridge; the GD32 `410` is the controller, reached via the `ext1` channel.) The IDs
+and payloads below are the **CAN-level** semantics as the nRF52 firmware interprets them.
+
+The nRF52 bridges selected values into an internal metric store via `FUN_0002fff8(value, index)`. That
+store is what the BLE `REGISTER_NOTIFIER` / `REGISTER` characteristics serve to the app. **So most of the
+BLE metrics in `super73-puck/docs/protocol.md` are CAN telemetry, re-exposed over BLE.**
 
 Notable correlation: the BLE register IDs `MOTION 0x0201`, `TOTAL 0x0202`, `RIDE 0x0203`, `POWER 0x0401`
 match CAN IDs `0x201/0x202/0x203/0x401` — the BLE register numbering mirrors the controller's CAN IDs.

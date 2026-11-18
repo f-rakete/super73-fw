@@ -86,7 +86,8 @@ each is an SWD/flash set (not a Nordic DFU zip) with an `sdcfw.json` describing 
 0x01000  SoftDevice S132           (info struct @0x3000: magic 0x51B1E5DB, SD size 0x23000, FWID 0x00A5)
 0x23000  Application               (vector table; reset 0x38e1d)        <- Ghidra load base
 0x73000  Bootloader (Nordic Secure DFU; reset 0x73469)
-  0x7b2b4  DFU signing public key  (ECDSA P-256, 64 B)
+  0x7b2b4  64-byte key block the unlock swaps (reverse.bike "skeleton key"); app-level update auth
+  0x7b5f4  nRF Secure-DFU ECDSA pubkey per reverse.bike's writeup (UNCHANGED by the unlock)
 0x7E000  MBR parameter page
 0x7F000  Bootloader settings page  (CRC/settings)
 ```
@@ -96,17 +97,32 @@ UICR ships separately in `uicr.bin` (maps at 0x10001000). FWID 0x00A5 → an S13
 ### GD32 controller image (`GD_S73Rx_H104_S410EU_20221020.bin`)
 - `GD` = **GigaDevice GD32** (STM32-clone Cortex-M). Vector table at file start: SP `0x200008b8`,
   reset `0x08003900` → loads in the **0x08000000** flash family (confirm exact base in Ghidra via
-  handler-target alignment). 26 KB bare-metal app; paired `.dat` is the signed init packet for the
-  BLE/EXT1 flash path. HW 104, SW 410 EU, built 2022-10-20.
+  handler-target alignment). 26 KB bare-metal app; paired `.dat` is the init packet for the BLE/EXT1
+  flash path — an **8-bit checksum, not a crypto signature** (the controller has no signature
+  verification; see "Update authenticity" below). HW 104, SW 410 EU, built 2022-10-20.
 
 ### Verified stock→unlocked display diff (74 bytes, 5 ranges — matches reverse.bike's notes exactly)
 - `0x3050c` (1 B) startup mode default: stock mode 2 → unlocked US mode 4
 - `0x3af07` (1 B) `versions` → `versionz` label
-- `0x7b2b4`..`0x7b2f3` (64 B) **DFU public-key swap** (the "SuperDuper Skeleton Key")
-- `0x7f000`..`0x7f003` + `0x7f01c`..`0x7f01f` (8 B) bootloader-settings CRC/fields, re-signed to match
+- `0x7b2b4`..`0x7b2f3` (64 B) reverse.bike **"skeleton key"** swap — app-level update auth, **not**
+  the nRF Secure-DFU pubkey (that is at ~`0x7b5f4` and is unchanged here) and **not** the controller path
+- `0x7f000`..`0x7f003` + `0x7f01c`..`0x7f01f` (8 B) bootloader-settings CRC/fields, recomputed to match
 
-Stock DFU public key (64 B @0x7b2b4): `12b4ada6 af80b973 3080bdea da6a2ae8 b46a6808 e03ad326
+Stock "skeleton key" block (64 B @0x7b2b4): `12b4ada6 af80b973 3080bdea da6a2ae8 b46a6808 e03ad326
 54f1dafb 04e4f62d 8629aa76 65d7b522 e8aa94ff 214e8d0b 2c425c53 a70d77bb fba888ec bf920327`
+
+### Update authenticity (per reverse.bike's update-architecture writeup) — three separate domains
+1. **BLE → nRF52's own firmware** = Nordic Secure DFU, **ECDSA P-256 + SHA-256** (pubkey ~`0x7b5f4`).
+   Gates *display* updates over BLE only.
+2. **App-level packages** = the **"skeleton key"** (`0x7b2b4`). Gates pushing custom *display/STM-bridge*
+   firmware over BT.
+3. **nRF52 → STM32 bridge (UART `$NRF,5/6,…`) → CAN → GD32 motor controller** = **8-bit checksum only,
+   no signature.** → **A stock, unmodified display flashes patched *controller* firmware over BT** (just
+   fix the CAN IDs + 8-bit checksum). This is why reverse.bike's controller CFW "works with unmodified
+   Diamond modules". **No display mod needed to live-test controller patches.**
+
+(Correction: an earlier draft mislabeled `0x7b2b4` as *the* DFU signing key and implied the display
+gatekeeps controller updates — it does not. Controller flashing is uncryptographic.)
 
 ## Tooling: Ghidra + rea (Stage 2 ready)
 - Ghidra **12.2** extracted at `tools/ghidra-dist/ghidra_12.2_PUBLIC` (satisfies rea ≥12.1).
