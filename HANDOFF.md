@@ -51,6 +51,8 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
    `GET module/{moduleId}/config?type=231&stmVersion=201015&bleVersion=221122&apiKey=…` returns the live
    decoders (`characteristics[]` with `readInfo.registryId`/`calculation`) — `type` = the firmwareType. Pull
    and diff against `protocol.md` / `docs/can-protocol.md`.
-4. Diff the pulled **GD32 v430** (`work/firmware/vendor/SUPER73-RX-MCU-430/`) against the stock **410**
-   (`work/firmware/controller-410-stock/`): what changed in the speed/current limiter between 2022 and 2024.
-   Same load base (`0x08003000`, reset `0x08003901`); headless-dump both and compare `FUN_08005abc`.
+4. **410 vs 430 controller diff is done → [docs/controller-410-vs-430.md](docs/controller-410-vs-430.md).**
+   Headline: the "torque update" replaced the hardcoded current-vs-speed **polynomial** with a 45-entry RAM
+   **lookup table** (`DAT_0800679c`→`0x200001c8` +`0x228`); the start-ramp step (`+0x14`) was re-tuned and is
+   now per-mode (100/80/70/110 vs 410's fixed 110/70). Open thread: find where that RAM table is populated
+   from flash — that's the persistent tuning target. 430 dump: `work/ghidra/controller-430-dump.txt`.
