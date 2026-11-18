@@ -18,6 +18,13 @@
 # Downloaded firmware packages (keep the extracted images, not the zips)
 /work/firmware/*.zip
 
+# Vendor OTA pull: keep the fetched firmware images (extracted); ignore credentials, scratch + zips
+/work/firmware/vendor/auth.json
+/work/firmware/vendor/request.json
+/work/firmware/vendor/firmware-response*.json
+/work/firmware/vendor/firmware-response*.txt
+/work/firmware/vendor/*.zip
+
 # OS / editor noise
 Thumbs.db
 .DS_Store

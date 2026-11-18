@@ -31,29 +31,69 @@ firmware. Backend hosts (from dex strings):
 
 - `https://analytics.comodule.com/bleapi/v2/` — the **BLE API** (firmware + register config)
 - `https://api.comodule.com/vehicleapi/v4/sse/vehicle/` — vehicle/IoT API (SSE telemetry, remote lock via `IotLockCommandDto`)
-- Auth: `Authorization: Bearer <Firebase token>` (Firebase identitytoolkit/securetoken login) and an `api-key`/`apiKey` header.
+- Auth (**verified**): the bleapi path authenticates on a **query param** `?apiKey=<const>` only; the
+  Firebase `Authorization: Bearer` token is used by the *vehicle* SSE API (`cn/d.java`), **not** bleapi.
+  - `apiKey = 6od0h50da2ub3pdjl0o3s998n0` — a build constant (`ua.a.f30403v`; OkHttp interceptor `t8`
+    appends it as `?apiKey=`). Not user-specific; shipped in the APK.
+  - Firebase web key `AIzaSyAIM7QEIQh05cQUp5RB953puBCXg6xFViw`, app `1:589963444509:android:…`,
+    project `comodule-ca`. Mint a Bearer (only if a path needs it) via
+    `identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<webkey>` with the account
+    email/password (app logs in email/password: `com.comodule.signup.ui`).
 
-### Firmware check: request → response (the images we want)
-`FirmwareUpdateRequestDto` (`com.comodule.bluetooth.internal.data.remote.dto`) — the app POSTs the bike's
-current state (read over BLE), approx `POST bleapi/v2/firmware`:
+### Firmware check: request → response — VERIFIED and PULLED
+**Exact route** (Retrofit interface `defpackage/a.java`):
+- `POST  bleapi/v2/module/{moduleId}/update?apiKey=…`  body `FirmwareUpdateRequestDto` → `FirmwareUpdateResponseDto`
+- `GET   bleapi/v2/module/{moduleId}/config?stmVersion=&bleVersion=&type=&apiKey=…` → `ConfigDto` (register schema)
 
+`moduleId` is per-bike (app → **Bike passport → Module data → Module ID**; our S2 = `1133a890eabfe9ba`).
+`firmwareType`, `stmVersion`, `nrfVersion` are read off the bike (shown on the passport once BLE-connected):
+our S2 = **firmwareType 231, STM 201015, nRF 221122** (the `231` matches reverse.bike's package prefix).
+
+`FirmwareUpdateRequestDto` wire fields (SerialNames; note `nrfVersion` serialises as `bleVersion`):
 ```
 firmwareType:int, bleBootloaderVersion:int?, stmVersion:int?, bleVersion:string?,
 ext1Version:int?, ext2Version:int?, nrfBlVersion:int?, bleName:string   // bleName = "SUPER73"
 ```
-
-`FirmwareUpdateResponseDto` — the reply, **with per-MCU download URLs + checksums + flash order**:
-
+`FirmwareUpdateResponseDto` — reply, **per-MCU download URLs + checksums + flash order**:
 ```
 updateOrder:list, stmChecksum, ext1Checksum, ext2Checksum,
 stmUpdateUrl, bleUpdateUrl, nrfBlUpdateUrl, ext1UpdateUrl, ext2UpdateUrl
 ```
+The server returns the current image if you report an older version (report installed versions → empty =
+"up to date"; report `0` → it serves the current image). It returns all applicable units at once with a
+flash order (e.g. `updateOrder:["NRFBL","BLE","STM"]` + each `*UpdateUrl`+`*Checksum`); the app
+(`defpackage/w.java`) flashes `updateOrder[0]` first, then re-queries.
 
-So the S2 has **five updatable code units**: STM32 **controller** (`stm*`), the **nRF52 BLE/display**
-(`ble*`), the **nRF bootloader** (`nrfBl*`), and two **ext** MCUs (ext1/ext2 — likely BMS/charger/lights).
-Each gets a direct URL (CDN/presigned) + checksum. This is the clean route to real images: call the
-endpoint for our bike, read the URLs, download. The nRF image flashes via **Nordic DFU**
-(`no.nordicsemi.android.dfu.*`); the STM/ext images via Comodule's own BLE flash path.
+**`firmwareType` is a CATALOG SELECTOR, not just our module's type.** The value picks which image set the
+backend offers; object names are `{firmwareType}-BLUETOOTH-{UNIT}-{version}.zip`. Sweeping the S73 family
+(apiKey only, our module, versions=0) maps it:
+- `231` → `BLE 221122` only  (what the passport reports as our type)
+- `232` / `233` → `NRFBL 6` + `BLE 221122` + **`STM 201015`** (STM matches our bike's reported STM exactly)
+- `228` → `BLE 210706`; `230` → `BLE 221122`; `245`/`247` → `STM 230210`; `249` → `STM 230321` (other variants)
+- The module's **STM32** (`stm`, `201015`) is the CAN-bridge MCU inside the Comodule module — a *different*
+  MCU from the motor controller. OTA-served via type 232/233; pulled.
+
+**The controller (EXT1) IS served — the key is a recognized `ext1Version`, not `0`.** The `ext*` units
+don't appear with versions=0 (the server reads `0` as "unit absent"). Report the **real current controller
+version** (the app sends `ModuleVersionInfo.controllerVersion`) and the server returns the update: with
+`firmwareType 231, ext1Version 410` → `updateOrder:["EXT1"]`, `ext1UpdateUrl` → **`SUPER73-RX-MCU-430.zip`**
+(note the controller's own naming `SUPER73-{model}-MCU-{version}.zip`, separate from the module units). Only
+`410`/`420` are recognized "current" values and both map to the latest `430`; `430` itself returns nothing
+(up to date). So the OTA serves the **latest** controller (430), not the stock 410 (we hold 410 already).
+Pull it with `… --firmware-type 231 --ble 221122 --stm 201015 --ext1 410` (BLE/STM current so only EXT1 is
+offered). This is exactly how the app updates the controller: read `controllerVersion` → send as `ext1Version`
+→ get `ext1UpdateUrl` → flash the GD32 over the `[VEH UPDATE]` CAN state machine.
+
+**Pulled (`scripts/fetch-vendor-firmware.mjs`, all verified Nordic-DFU packages, in `work/firmware/vendor/`):**
+| unit | type | package | image | notes |
+|---|---|---|---|---|
+| BLE (nRF52 display) | 231/232 | `…-BLUETOOTH-BLE-221122.zip` | `comodule-sdisplay-nrf.bin` 151,468 B, 2022-11-22 | **byte-identical** (sha256 `deb8971e…`) to reverse.bike flash @`0x23000` |
+| STM32 (module bridge) | 232 | `232-BLUETOOTH-STM-201015.zip` | `comodule-hw-stm32.bin` 10,168 B, 2020-10-15 | matches bike's reported STM `201015` |
+| nRF bootloader | 232 | `232-BLUETOOTH-NRFBL-6.zip` | `comodule_nrf_bl_secure.bin`, Secure DFU BL | |
+| **GD32 motor controller** | 231 ext1 | `SUPER73-RX-MCU-430.zip` | `GD_S73Rx_H104_S430EU_20241011.bin` 26,608 B, 2024-10-11 | **v430**, reset `0x08003901` (same base as 410); newer than stock 410 |
+
+The nRF images flash via **Nordic DFU** (`no.nordicsemi.android.dfu.*`); the STM/ext images via Comodule's own
+BLE→CAN path. Downloads are gitignored.
 
 ### Bonus: the backend also serves the full register map
 Sibling serializers in the same `data.remote` layer describe the metrics protocol declaratively — the

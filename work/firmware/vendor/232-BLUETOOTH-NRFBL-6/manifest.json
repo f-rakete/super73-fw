@@ -1,0 +1,8 @@
+{
+    "manifest": {
+        "bootloader": {
+            "bin_file": "comodule_nrf_bl_secure.bin",
+            "dat_file": "comodule_nrf_bl_secure.dat"
+        }
+    }
+}

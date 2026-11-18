@@ -1,0 +1,8 @@
+{
+    "manifest": {
+        "application": {
+            "bin_file": "comodule-sdisplay-nrf.bin",
+            "dat_file": "comodule-sdisplay-nrf.dat"
+        }
+    }
+}
