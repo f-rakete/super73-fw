@@ -244,6 +244,19 @@ Targeted decompiles of these handlers → `work/ghidra/display-decomp.txt`.
 Shared RAM context accessor is `FUN_00030034()` (returns the main state struct; `+0x26` gate, `+0x289` mode,
 `+0x48/+0x50` assist/light setters).
 
+## Controller↔display CAN protocol + "can we dump the controller over BT?" → No
+Decompiling the display's CAN RX handler (`FUN_00030b7c`) mapped most of the internal CAN bus: telemetry
+`0x200–0x203`, version/model `0x210–0x211`, region+default-mode `0x212`, throttle/assist `0x400–0x402`,
+odo `0x266/0x466`, and the update frames `0x5AA/0x5FF`. The BLE registers are largely this CAN telemetry
+re-exposed (and the BLE register IDs mirror the CAN IDs: `MOTION 0x0201`, `POWER 0x0401`, …). Full map:
+**[docs/can-protocol.md](docs/can-protocol.md)**.
+
+On dumping: the controller bootloader protocol is **write-only** — `0x5FF` replies are ACK (`0x60`) /
+error (`0x80`) only, and the `0x5AA` verify is a **4-byte CRC compare**, not a flash read. No read-memory
+command exists on the BT/CAN path → the GD32 controller firmware **cannot be dumped over BT** (confirms
+reverse.bike). A dump requires physical SWD/UART on the GD32. The nRF52 display, by contrast, is readable
+over **SWD** (physical), which is what reverse.bike's "backup original" step does.
+
 ## The security service is the firmware-update signing key
 
 The unused `00002554-1212-efde-1523-785feabcd123` service (private key W / public key R / hash W /
