@@ -2,7 +2,7 @@
 
 Start here. Current state, environment, gotchas, next steps. Details in FINDINGS.md / PLAN.md.
 
-## State (2026-11-18)
+## State (2026-11-19) — session wrapped; the remaining work needs a fresh agent (see Next steps)
 - **Vendor OTA pull working + verified — all four MCUs.** `scripts/fetch-vendor-firmware.mjs` fetches the
   real images the Comodule backend serves for our bike. Route `POST bleapi/v2/module/{moduleId}/update?apiKey=…`
   (the old "approx `bleapi/v2/firmware`" was wrong). Auth = `?apiKey=6od0h50da2ub3pdjl0o3s998n0` constant only
@@ -18,7 +18,26 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
   - GD32 controller `GD_S73Rx_H104_S410EU_20221020.bin` (26 KB, 410) + `.dat`.
   - unlocked display kept for diffing (diff fully explained; DFU pubkey @0x7b2b4).
 - ELF wrappers built in `work/ghidra/`: `controller-410.elf` (@0x08003000), `display-221122.elf` (@0x0).
-- Ghidra headless dump of the controller in progress → `work/ghidra/controller-dump.txt`.
+- **Controller dumps done:** `work/ghidra/controller-dump.txt` (410, 110 fns) + `controller-430-dump.txt`
+  (430, 113 fns), both raw @0x08003000. Display app dump: `display-app-list.txt`, `display-decomp.txt`.
+- **410→430 controller diff complete** → `docs/controller-410-vs-430.md`. The "torque update" = the
+  hardcoded current-vs-speed **polynomial** (`0x494d/0xc37/0x5a7d/0x4f04/0x1a2e`) replaced by a **45-entry
+  RAM table** (`DAT_0800679c`→`0x200001c8` +`0x228`, indexed by speed-km/h 0–44), in both the mode function
+  `FUN_08005aa8` and current controller `FUN_080062a4`. FOC/Hall, NTC thermal, sleep counter, PI regulator,
+  speed caps (25/32/35/45), `0x9c4` clamp all unchanged.
+- **RESOLVED: the 430 torque curve is NOT in the DFU `.bin` we have.** The table is read-only in the image
+  (3 readers, no writer; polynomial 100% gone); it's initialized `.data` whose scatter-load **LMA
+  (`0x08009e8c`) sits *past* the app `.bin`'s end (`0x80097f0`)**. Both 410 and 430 `.bin`s are app-code-only;
+  their `.data`/config region lives in flash the DFU doesn't ship. So reading the actual 45 curve values
+  needs a **live SWD dump of the GD32** (= reverse.bike's "backup original over SWD"). Not backend-delivered
+  either: `config-231.json` (pulled) is only register decoders + the class slider, no curve.
+- **Throttle-acceleration mechanism documented** → `docs/throttle-ramp.md`. It's a software **slew-rate
+  limiter on commanded current**: applied value chases the target by a per-mode **up-step** (`ctx+0x14`:
+  410 `110/70`, 430 `100` low-speed / `80|70` rolling), `−2/50/100` down; the step is the launch knob and is
+  **fully in the image** (`patch-controller-ramp.mjs` tunes it). Only the target *magnitude* (the curve) needs
+  the dump.
+- **Backend register map pulled** → `work/firmware/vendor/config-231.json` + `docs/backend-config-register-map.md`
+  (speed/voltage/soc/distance decoders; class slider reads `0300`/writes `00D1`, app class 1–4 → mode 5–8).
 
 ## Environment / how to run
 - **Node 26.13** (system). rea 6.9.0 via `npx -y rea-agents@6.9.0`. **jadx 1.5.6** at `tools/jadx/bin/jadx`.
@@ -42,17 +61,33 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
   into the pokAI repo; cleaned. Keep this project's files under `Desktop/super73-fw/`.)
 - rea needs Node ≥24.22.1/26.12.1 and, for its Ghidra checks, JDK ≥25 — both already satisfied.
 
-## Next steps
-1. Read `work/ghidra/controller-dump.txt`: find the speed/assist/mode-limit logic (compare to the mode
-   table in super73-puck/docs/protocol.md) and the EXT1 DFU/update path.
-2. Run the same headless dump on `display-221122` (import full `flash.bin` @0x0, or the app region @0x23000);
-   recover the GATT register handlers, the `00002554` security-service verify routine, and the DFU pubkey use.
-3. Cross-check register decoders against the backend schema (`df/g.java`: multiplier/offset/byte-range).
-   `GET module/{moduleId}/config?type=231&stmVersion=201015&bleVersion=221122&apiKey=…` returns the live
-   decoders (`characteristics[]` with `readInfo.registryId`/`calculation`) — `type` = the firmwareType. Pull
-   and diff against `protocol.md` / `docs/can-protocol.md`.
-4. **410 vs 430 controller diff is done → [docs/controller-410-vs-430.md](docs/controller-410-vs-430.md).**
-   Headline: the "torque update" replaced the hardcoded current-vs-speed **polynomial** with a 45-entry RAM
-   **lookup table** (`DAT_0800679c`→`0x200001c8` +`0x228`); the start-ramp step (`+0x14`) was re-tuned and is
-   now per-mode (100/80/70/110 vs 410's fixed 110/70). Open thread: find where that RAM table is populated
-   from flash — that's the persistent tuning target. 430 dump: `work/ghidra/controller-430-dump.txt`.
+## Next steps (for the fresh agent — ordered)
+1. **SWD dump of the GD32 controller — the key blocker for the torque curve.** The actual 45-entry
+   current-vs-speed table (and the whole `.data`/config region at flash `0x08009e8c`+) is **not** in any
+   `.bin` we have (see State). It cannot be read over BT (`docs/can-protocol.md` — write-only bootloader).
+   Needs a physical SWD probe on the GD32 (open the case; reverse.bike reads these this way). Dump
+   `0x08003000`..`~0x800a6d4`, then read the table at RAM-mapped `0x200003f0` (struct `0x200001c8`+`0x228`)
+   and compare the launch region to 410's polynomial. **This is the real persistent tuning target.**
+2. **Pin the 430 ramp-step patch offsets (no hardware).** The step values (`100` low-speed / `80`/`70`
+   rolling, RAM `0x20000094+0x14`, written in `FUN_08005aa8`) are known but not yet mapped to flash imm8
+   offsets. Run `DumpInsn.java` (`work/ghidra/scripts/`) on `GD_S73Rx…S430EU_20241011.bin` and find the
+   `movs #imm` sites, as `controller-insn.txt` already does for 410. Then `patch-controller-ramp.mjs` can
+   target 430 too. See `docs/throttle-ramp.md`.
+3. **Display (nRF52 `221122`) firmware** — the other candidate for the curve's origin: check whether the
+   display *pushes* the current curve to the GD32 over CAN (it's the shared display across 410/430). Finish
+   the display RE too: GATT handlers, the `00002554` security-service verify routine, DFU pubkey use. Dump
+   is `display-221122.elf` / `display-decomp.txt`; headless-import `flash.bin` @0x0 or the app @0x23000.
+4. Finish cross-checking register decoders against `work/firmware/vendor/config-231.json` →
+   `docs/backend-config-register-map.md`; fold into `super73-puck/docs/protocol.md` / `docs/can-protocol.md`.
+5. (Not yet analyzed) the pulled **STM32 bridge** image `232-BLUETOOTH-STM-201015` (`comodule-hw-stm32.bin`,
+   10 KB) and the **nRF bootloader** `232-BLUETOOTH-NRFBL-6`.
+
+## Gotchas added this session
+- **The GD32 DFU `.bin` is app-code-only.** Its `.data`/config LMA is in flash *past* the `.bin` end — do
+  **not** expect to find initialized tables/calibration in the `.bin`; that needs the full-flash SWD dump.
+- **Vendor fetch:** `scripts/fetch-vendor-firmware.mjs` (apiKey constant baked in; `--config`/`--signin`
+  helpers). `firmwareType` is a catalog selector: 231=BLE-only, 232/233=BLE+STM+NRFBL, controller via
+  type 231 + `ext1Version=410` (a *recognized* non-zero value). Images → `work/firmware/vendor/` (gitignored
+  except the extracted `.bin`s and `config-231.json`, which are committed).
+- **Network calls (OTA fetch, config pull) are classifier-gated** — they got blocked until the user
+  explicitly authorized; a fresh agent may need the same. **`git push` is also gated** on user authorization.
