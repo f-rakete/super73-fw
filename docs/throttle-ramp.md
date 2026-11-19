@@ -1,4 +1,4 @@
-# Throttle dead-start ramp — calculation & patch notes (GD32 controller `410`)
+# Throttle dead-start ramp — calculation & patch notes (GD32 controller `410` stock & `430`)
 
 Scope: the throttle-from-standstill "start curve" in the **unlimited/off-road** modes (3 US / 7 EU).
 Pedal-assist is intentionally left alone. Source: `work/ghidra/controller-dump.txt` (`FUN_08005abc`
@@ -81,3 +81,41 @@ code that didn't cleanly disassemble. Two ways to nail it:
 
 ISR map (GD32F103-style, from the vector table): `IRQ18`=ADC, `IRQ20`=CAN-RX, `IRQ23`=EXTI (halls),
 `IRQ24-26`=TIMER0 brk/up/trg, `IRQ28/29`=TIMER1/2.
+
+## 430 (`S430EU_20241011`) — same slew limiter, softer low-speed step, data-driven target
+
+Confirmed in `work/ghidra/controller-430-dump.txt` (current controller `FUN_080062a4`, mode function
+`FUN_08005aa8`). The **mechanism is unchanged** — the same bounded slew on the commanded current:
+```
+applied = *(0x20000094 + 0x18)                  // DAT_0800677c / DAT_08005eb4 struct
+if (applied < target)  applied += step(+0x14)   // far from target; +0x14 / +2 near it
+else                   applied -= 2 / 50 / 100  // normal / speed<4 / mode-flag
+*(ctx + 0x10) = -applied                          // → FOC current PI regulator → motor
+```
+What changed vs 410:
+- **Up-step is per-mode and softer at low speed.** Written in `FUN_08005aa8` to `0x20000094+0x14`:
+  low speed (speed index `< 0x10`) → **100**; rolling → **80** (`0x50`) or **70** (`0x46`), mode-dependent
+  — vs 410's **110 / 70**. (A separate `step = 3` branch exists for a low-demand/creep condition.) So 430
+  launches a touch gentler from a stop (100 vs 110) and roll-on differs by mode.
+- **Target moved from a polynomial to a data table.** 410 computed the current ceiling the ramp chases
+  from a piecewise polynomial; 430 reads it from a 45-entry current-vs-speed table in `.data` whose LMA
+  sits *past* the app `.bin` (needs an SWD dump — see `docs/controller-410-vs-430.md`). This sets the
+  target *magnitude/shape*, **not** the ramp *rate*.
+
+Not yet pinned: the exact imm8 file offsets of the 430 step constants (a `DumpInsn` pass on the 430 image,
+as `controller-insn.txt` gives for 410). The values and RAM location (`0x20000094+0x14`) are known; only
+the flash patch offsets remain.
+
+## Net conclusion — how throttle acceleration is implemented (both builds)
+
+Throttle acceleration is a **software slew-rate limiter on the commanded motor current**, not a direct
+throttle→current map:
+1. a per-mode **up-step** (`ctx+0x14`: `110/70` on 410, `100/80|70` on 430) caps how fast the applied
+   current climbs toward the target each control tick — this is the launch/snappiness knob;
+2. the **target** is throttle/assist run through the speed-curve (410 polynomial / 430 table), ×90–85%
+   throttle scale, clamped to the per-mode speed cap (`0x9c4` = 25 km/h EU), with battery/thermal foldback;
+3. the ramped value feeds the **FOC current PI regulator** → motor.
+
+The ramp *rate* and its step constants are **fully in the firmware image** for both builds — this is what
+`patch-controller-ramp.mjs` tunes. The 430 torque **table** only reshapes the *target magnitude* per speed
+and is the one piece needing an SWD dump; it does **not** change the ramp dynamics.
