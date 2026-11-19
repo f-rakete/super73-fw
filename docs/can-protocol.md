@@ -36,7 +36,7 @@ arithmetic — confirm against a live capture).
 | `0x200` | fault / warning bitmask | `mask = u16(d6,d7)`; each set bit (`>>2`) → a warning index | med |
 | `0x201` | reg4 + controller-BL entry trigger | `reg4 = u16(d0,d1)`; enters controller bootloader if armed | med |
 | `0x202` | reg5, reg6 | `reg5 = d1`; `reg6 = 32-bit(d2,d3,d4,d6)` | med |
-| `0x203` | battery current / power | `reg7 = 3-sample avg of u16(d0,d1)`; `reg8 = 32-bit`; `reg9 = u16(d6,d7) & 0x1FFF` | med |
+| `0x203` | RIDE: torque / cadence / range (**not** battery current — see below) | `reg7 = 3-sample avg of u16(d0,d1)`; `reg8 = 32-bit`; `reg9 = u16(d6,d7) & 0x1FFF` = range | med |
 | `0x210` | **version + model** | model from `d3`: `'R'/'Z'/'S'` → R-RX / ZX; ASCII-hex version → `+0x58`; reg10, reg0xB | high |
 | `0x211` | version (continuation) | ASCII-hex digits assembled into the version `@+0x58` | high |
 | `0x212` | **region + default ride mode** | `d0,d1 == "EU"` → EU (region=2), **default mode 4**; else US (region=1); region string → `+0x5c` | high |
@@ -64,8 +64,11 @@ copy. (A dump would require physical SWD/UART access to the GD32.)
 
 ## Open items / how to finish the map
 - Finish the **metric-index → BLE-register** mapping: cross-reference the `reg N` indices here against the
-  register IDs in `super73-puck/docs/protocol.md` (index 3 = ride mode, set by `0x212`; index 7 =
-  current/power from `0x203`).
+  register IDs in `super73-puck/docs/protocol.md` (index 3 = ride mode, set by `0x212`). NB: **battery
+  current is NOT `0x203`** — it is the live-confirmed **POWER `0x0401` d6–d7** (`u16 ÷1000 = A`, read by
+  Walker73; see `docs/current-limits.md`). `0x203` reg7 (`u16(d0,d1)`) is more likely the torque field that
+  BLE RIDE `0x0203 d2` exposes. The `0x401` row below ("odo / voltage?") should carry voltage (d2–d3) and
+  current (d6–d7).
 - Confirm the low/med rows with a **live CAN capture** (CAN-H/L on the bus, or a logic analyzer) — the
   byte combinations above are the firmware's, but field *semantics* (which 32-bit value is odo vs voltage)
   are partly inferred.

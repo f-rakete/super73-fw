@@ -65,19 +65,26 @@ low-speed allowance, but left the H104 current ceilings alone. Likely already ne
 
 ## Observing battery current over BLE (for monitoring + unit calibration)
 
-Battery current — the same quantity as the foldback's `*DAT_08006330` (`700` cutoff) — **is not in the
-stock app's BLE telemetry**. The authoritative backend decoders (`backend-config-register-map.md`) expose
-only speed `0201`, distance `0202`, range `0203`, **voltage `0401`**, SoC `0402`, assist `0300` — no amps.
+Battery current — the same quantity the foldback gates on (`*DAT_08006330`, the `700` cutoff) — **is
+broadcast over BT in the POWER register `0x0401`, and Walker73 already reports it** (our super73-puck /
+hasuper73 decode the same field). Per `super73-puck/docs/protocol.md` (Walker73-based, live-confirmed on
+our S2):
 
-**But the data is present and likely readable over BT without the app:**
-- On the internal **CAN bus** it is message **`0x203`**: `reg7 = battery current` (3-sample avg of
-  `u16(d0,d1)`), `reg8 = 32-bit` (power), `reg9 = u16(d6,d7) & 0x1FFF` = range (`docs/can-protocol.md`).
-- BLE register IDs mirror CAN IDs, and the app decodes **`range` from bytes [6..7]** of BLE reg `0x0203` —
-  i.e. that characteristic carries the **raw CAN `0x203` payload**, so **battery current is almost
-  certainly in bytes [0..1]** of reg `0x0203`, ignored by the stock decoder. Read reg `0x0203` yourself
-  (super73-puck / hasuper73 BLE path) and decode `u16(b0,b1)` to log battery current live.
-- This lets us (a) **monitor** battery draw during a current-limit test, and (b) **calibrate** the `700`
-  cutoff (and the foldback windows `500/650`) to real amps. It does **not** directly reveal the motor-current
-  command units (`1250/1875`) — that's a different quantity (reg8 "power" may help).
-- Confidence: CAN `0x203` decode is "med" and the BLE-`0203`-carries-current inference is unverified — a
-  quick live read (watch bytes [0..1] of reg `0x0203` track throttle load) confirms it before relying on it.
+- **POWER `0x0401`, d6–d7: `u16 LE charge current, ÷1000 = A`** (Walker73's wiki marks d5–d6, but both
+  codebases read `[6:8]`). d2–d3 of the same register is battery voltage in mV (our S2 read 53.93 V).
+- The **official Comodule app does not surface current** — its backend decoder
+  (`backend-config-register-map.md`) extracts only *voltage* from `0x0401`. The current bytes (d6–d7) are
+  physically in the register; Walker73 / community tools read them, the stock app ignores them.
+
+So to log battery amps live during a current-limit test: **run Walker73**, or read POWER `0x0401` and decode
+`u16(d6,d7)/1000` via the super73-puck / hasuper73 BLE path — no custom firmware needed. This gives (a) a
+live **monitor** of battery draw, and (b) a way to **calibrate** the `700` cutoff and the `500/650` foldback
+windows to real amps. It is *battery* current (the foldback's gating variable), not the motor-command units
+(`1250/1875`), which are a separate quantity.
+
+Caveats: the field is labelled "charge current" — confirm it tracks discharge/load current (a quick
+throttle-load read), not only charging; and neither of our codebases *surfaces* it yet (they decode the
+location). **Corrections:** an earlier draft of this doc put current in reg `0x0203 d0–d1` — wrong; BLE
+`0x0203` is RIDE (cadence/range/torque). And `docs/can-protocol.md`'s "`0x203` = battery current (reg7)" is
+suspect: super73-puck reads BLE `0x0203 d2` as *torque*-related, so CAN `0x203` reg7 is probably torque; the
+authoritative battery-current source is **POWER `0x0401 d6–d7`** (Walker73-confirmed).
