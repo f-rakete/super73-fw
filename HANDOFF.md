@@ -77,7 +77,9 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
    for 430 throttle, the SWD table (step 1) sets launch magnitude; for a slow control loop, a ramp step-*up*
    via `patch-controller-ramp.mjs` (safe/reversible/cap-free) is the fallback. No flash image was shipped:
    a step-up is placebo if the loop is fast, and the fold is a protection. Deadzone is ruled out by the user
-   (not the issue).
+   (not the issue). **UPDATE: `docs/reverse-bike-patches.md` supersedes the uncertainty — reverse.bike's
+   verified 410-portable off-road recipe sets the throttle rise rate to 150 and adds a q-axis filter lever;
+   building the 410 patch is now a known byte edit if the bike runs 410.**
 1. **SWD dump of the GD32 controller — the key blocker for the torque curve.** The actual 45-entry
    current-vs-speed table (and the whole `.data`/config region at flash `0x08009e8c`+) is **not** in any
    `.bin` we have (see State). It cannot be read over BT (`docs/can-protocol.md` — write-only bootloader).
@@ -99,6 +101,17 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
    10 KB) and the **nRF bootloader** `232-BLUETOOTH-NRFBL-6`.
 
 ## Gotchas added this session
+- **reverse.bike `sdcfw` is the key external reference — see `docs/reverse-bike-patches.md`.** Cloned
+  read-only to `work/sdcfw/` (gitignored). Their `apps/kitchen/patches/230-BLUETOOTH-EXT1-310/off-road.ts`
+  is a full off-road retune for the RX H104 family; **all 6 `original` byte sites verified against our 410
+  image**, so it ports to 410 at identical file offsets (force mode 3; disable top-end roll-off; throttle
+  rise rate 110/70 → **150**; **double the q-axis current filter coef `0x249a` 38→76** = a 2nd snappiness
+  lever we'd missed). Deploy is **patched `.bin` + stock `.dat` over the display BLE DFU** (they ship the
+  stock `.dat`; the GD32 doesn't verify it) — resolves the old "signature mismatch blocks flashing" caveat.
+  No 430 patch is published (consistent with the RAM-table finding).
+- **CORRECTION: controller load base is `0x08003800`, not `0x08003000`.** reverse.bike's descriptors say so
+  (14 KB bootloader). File offsets are unaffected (our `patch-controller-ramp.mjs` is fine), but our Ghidra
+  **absolute** addresses are all 0x800 low — re-import at `0x08003800` to fix cross-references.
 - **The GD32 DFU `.bin` is app-code-only.** Its `.data`/config LMA is in flash *past* the `.bin` end — do
   **not** expect to find initialized tables/calibration in the `.bin`; that needs the full-flash SWD dump.
 - **Vendor fetch:** `scripts/fetch-vendor-firmware.mjs` (apiKey constant baked in; `--config`/`--signin`
