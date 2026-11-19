@@ -76,15 +76,29 @@ our S2):
   (`backend-config-register-map.md`) extracts only *voltage* from `0x0401`. The current bytes (d6–d7) are
   physically in the register; Walker73 / community tools read them, the stock app ignores them.
 
-So to log battery amps live during a current-limit test: **run Walker73**, or read POWER `0x0401` and decode
-`u16(d6,d7)/1000` via the super73-puck / hasuper73 BLE path — no custom firmware needed. This gives (a) a
-live **monitor** of battery draw, and (b) a way to **calibrate** the `700` cutoff and the `500/650` foldback
-windows to real amps. It is *battery* current (the foldback's gating variable), not the motor-command units
-(`1250/1875`), which are a separate quantity.
+Exact decode (`hasuper73/custom_components/super73/protocol.py`, Walker73-compatible 10-byte frame):
 
-Caveats: the field is labelled "charge current" — confirm it tracks discharge/load current (a quick
-throttle-load read), not only charging; and neither of our codebases *surfaces* it yet (they decode the
-location). **Corrections:** an earlier draft of this doc put current in reg `0x0203 d0–d1` — wrong; BLE
-`0x0203` is RIDE (cadence/range/torque). And `docs/can-protocol.md`'s "`0x203` = battery current (reg7)" is
-suspect: super73-puck reads BLE `0x0203 d2` as *torque*-related, so CAN `0x203` reg7 is probably torque; the
-authoritative battery-current source is **POWER `0x0401 d6–d7`** (Walker73-confirmed).
+```python
+# POWER_ID = (0x04, 0x01); data[:2] = register id, payload is d2..d9
+charge_current = int.from_bytes(data[6:8], "little") / 1000   # UNSIGNED u16 LE, no sign flag
+```
+
+So the field is **unsigned `u16 LE (d6–d7) ÷ 1000 = A`**, and it is **charge-oriented**: hasuper73 names it
+`charge_current` and derives `charging = charge_current >= 2.0 A`. Being unsigned it cannot express discharge
+as a negative, so **under load it very likely reads ~0** — i.e. it is probably the *charger* current, **not**
+the acceleration draw we want to monitor.
+
+**Verify before relying on it:** one full-throttle BLE read of `0x0401` d6–d7 — if it spikes, it's usable
+load current; if it stays ~0, it is charge-only. If charge-only, fall back to **voltage sag** as a load
+proxy: the *real* pack voltage is POWER `0x0401` **d2–d3** (`u16 LE` mV — confirmed 53.93 V on our S2; note
+hasuper73 does **not** read this, it *estimates* voltage from the range byte). More current → more sag, so
+logging d2–d3 under throttle indicates load even without amps. For true amps under load, an external meter
+(inline shunt / clamp on the battery leads) or a physical CAN tap is the reliable path. The BLE
+`charge_current` calibrates the `700` cutoff only if the step-1 check shows it moves under load.
+
+It is *battery* current (the foldback's gating variable), not the motor-command units (`1250/1875`).
+
+**Corrections to earlier drafts:** this doc first put current in reg `0x0203 d0–d1` — wrong; BLE `0x0203` is
+RIDE (cadence/range/torque). And `docs/can-protocol.md`'s "`0x203` = battery current (reg7)" is suspect:
+super73-puck reads BLE `0x0203 d2` as *torque*-related, so CAN `0x203` reg7 is probably torque; the
+authoritative battery-current register is **POWER `0x0401 d6–d7`** (Walker73-confirmed).
