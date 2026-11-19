@@ -32,8 +32,17 @@ These match `docs/can-protocol.md` (BLE reg IDs mirror the CAN IDs: MOTION `0x02
 - read `0300` (`[3]`), **write `00D1` (`[2]`)** — the same `00 D1` command the display's settings-write
   handler decodes (see `FINDINGS.md` → display handlers).
 - `type: slider`, `minValue 1`, `maxValue 4`, `defaultValue 1`, **`valueOffset 4`**.
-- So app **"Class 1–4" → firmware mode 5–8** (value + 4). The EU/off-road modes (0–4 vs 5–8) and the
-  controller's 0–7 mode table line up with this offset.
+- The app presents this as a **"Class 1–4"** slider with `valueOffset 4`. **This is the slider's own UI
+  encoding, not a ride-mode offset** — do *not* read it as "firmware mode = class + 4".
+
+The ride **mode** is written **directly as a 0–7 value** (same `00 D1` command, mode in byte `[4]`; see
+`super73-puck/docs/protocol.md` → Ride modes, and `tools/set_mode.py`). That mapping is **live-confirmed on our
+S2** — **mode 4 = EU EPAC 25 km/h**, the EU power-on default — and it is the authoritative one: it agrees with the
+controller switch (cases 0–7, case 4 → `movs #0x19` = 25 km/h), CAN `0x212` (EU default = mode 4) and the legal
+posture. A plain +4 would send Class 1–4 to modes 5–8, skipping the legal mode 4 and overrunning the 0–7 range,
+so it **cannot** be the ride-mode mapping. How `valueOffset 4` on the class byte `[2]` actually projects onto the
+0–7 mode index is a separate, **unverified** detail (the `[2]` byte is the light/class field in the write, not the
+mode byte `[4]`) — don't infer a ride-mode numbering from it.
 
 ## Not here: the current/torque curve
 

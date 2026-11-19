@@ -21,9 +21,10 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
 - **Controller dumps done:** `work/ghidra/controller-dump.txt` (410, 110 fns) + `controller-430-dump.txt`
   (430, 113 fns), both raw @0x08003000. Display app dump: `display-app-list.txt`, `display-decomp.txt`.
 - **410→430 controller diff complete** → `docs/controller-410-vs-430.md`. The "torque update" = the
-  hardcoded current-vs-speed **polynomial** (`0x494d/0xc37/0x5a7d/0x4f04/0x1a2e`) replaced by a **45-entry
-  RAM table** (`DAT_0800679c`→`0x200001c8` +`0x228`, indexed by speed-km/h 0–44), in both the mode function
-  `FUN_08005aa8` and current controller `FUN_080062a4`. FOC/Hall, NTC thermal, sleep counter, PI regulator,
+  hardcoded current-vs-speed **polynomial** (`0x494d/0xc37/0x5a7d/0x4f04/0x1a2e`, in 410's mode function
+  `FUN_08005abc` + current controller `FUN_080062b8`) replaced by a **45-entry RAM table**
+  (`DAT_0800679c`→`0x200001c8` +`0x228`, indexed by speed-km/h 0–44) in the 430 equivalents
+  `FUN_08005aa8` / `FUN_080062a4`. FOC/Hall, NTC thermal, sleep counter, PI regulator,
   speed caps (25/32/35/45), `0x9c4` clamp all unchanged.
 - **RESOLVED: the 430 torque curve is NOT in the DFU `.bin` we have.** The table is read-only in the image
   (3 readers, no writer; polynomial 100% gone); it's initialized `.data` whose scatter-load **LMA
@@ -37,7 +38,8 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
   **fully in the image** (`patch-controller-ramp.mjs` tunes it). Only the target *magnitude* (the curve) needs
   the dump.
 - **Backend register map pulled** → `work/firmware/vendor/config-231.json` + `docs/backend-config-register-map.md`
-  (speed/voltage/soc/distance decoders; class slider reads `0300`/writes `00D1`, app class 1–4 → mode 5–8).
+  (speed/voltage/soc/distance decoders; class slider reads `0300`/writes `00D1`). NB: ride **mode** is a direct
+  0–7 value (4 = EU EPAC 25 km/h), **not** class+4 — the old "class 1–4 → mode 5–8" reading was wrong; see the doc.
 
 ## Environment / how to run
 - **Node 26.13** (system). rea 6.9.0 via `npx -y rea-agents@6.9.0`. **jadx 1.5.6** at `tools/jadx/bin/jadx`.
@@ -90,4 +92,5 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
   type 231 + `ext1Version=410` (a *recognized* non-zero value). Images → `work/firmware/vendor/` (gitignored
   except the extracted `.bin`s and `config-231.json`, which are committed).
 - **Network calls (OTA fetch, config pull) are classifier-gated** — they got blocked until the user
-  explicitly authorized; a fresh agent may need the same. **`git push` is also gated** on user authorization.
+  explicitly authorized; a fresh agent may need the same. **`git push` is always allowed in auto mode**
+  (Flo's standing authorization) — commit and push to `main` without asking.

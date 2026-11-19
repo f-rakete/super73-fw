@@ -17,7 +17,7 @@ generic FTEX = 515xx.
 
 ## The companion app is the gateway
 
-- **Package `com.comodule.super`** (SUPER73 Inc, white-labelled **Comodule** telematics). Latest ~3.20.0.
+- **Package `com.comodule.super`** (SUPER73 Inc, white-labelled **Comodule** telematics). Analysed: v3.21.0.
 - In-app **Settings → Firmware Update** is the OTA path. A failed update "can corrupt the controller",
   which tells us the app pushes firmware to the controller as well as the display.
 - RE'ing the app should yield: the full GATT protocol incl. the **security-service handshake**, the
@@ -136,7 +136,7 @@ UICR ships separately in `uicr.bin` (maps at 0x10001000). FWID 0x00A5 → an S13
 
 ### GD32 controller image (`GD_S73Rx_H104_S410EU_20221020.bin`)
 - `GD` = **GigaDevice GD32** (STM32-clone Cortex-M). Vector table at file start: SP `0x200008b8`,
-  reset `0x08003900` → loads in the **0x08000000** flash family (confirm exact base in Ghidra via
+  reset `0x08003900` (vector value `0x08003901`, Thumb bit set) → loads in the **0x08000000** flash family (confirm exact base in Ghidra via
   handler-target alignment). 26 KB bare-metal app; paired `.dat` is a Nordic Secure-DFU **signed init
   packet**: a 32-byte SHA-256 of the image (stored byte-reversed — verified `== reverse(sha256(bin))`)
   **plus a 64-byte ECDSA P-256 signature** (`1a 40` field). It is image-specific (a patched `.bin`
@@ -144,7 +144,9 @@ UICR ships separately in `uicr.bin` (maps at 0x10001000). FWID 0x00A5 → an S13
   authenticity" below. HW 104, SW 410 EU, built 2022-10-20.
 
 ### Verified stock→unlocked display diff (74 bytes, 5 ranges — matches reverse.bike's notes exactly)
-- `0x3050c` (1 B) startup mode default: stock mode 2 → unlocked US mode 4
+- `0x3050c` (1 B) startup mode-default byte: stock `2` → unlocked `4` (read against the Ride-modes table: index
+  2 = US CLASS3, 4 = EU EPAC — note mode 4 is **EU**, not "US"; the earlier "US mode 4" label was wrong. Whether
+  this byte is the raw 0–7 mode index or a region/class preset is unverified.)
 - `0x3af07` (1 B) `versions` → `versionz` label
 - `0x7b2b4`..`0x7b2f3` (64 B) reverse.bike **"skeleton key"** swap — app-level update auth, **not**
   the nRF Secure-DFU pubkey (that is at ~`0x7b5f4` and is unchanged here) and **not** the controller path
@@ -178,8 +180,11 @@ stock-display path's enforcement is unconfirmed, not "uncryptographic".)
 
 ## Tooling: Ghidra + rea (Stage 2 ready)
 - Ghidra **12.2** extracted at `tools/ghidra-dist/ghidra_12.2_PUBLIC` (satisfies rea ≥12.1).
-- JDK **21** at `C:\Program Files\Microsoft\jdk-21.0.13.21-hotspot` (Ghidra 12.x needs 21+).
-- Set `GHIDRA_INSTALL_DIR` to the Ghidra dir and `JAVA_HOME` to the JDK 21 for rea's headless runs.
+- JDK **21** at `C:\Program Files\Microsoft\jdk-21.0.13.21-hotspot` (Ghidra 12.x needs 21+); JDK **25** at
+  `C:\Program Files\Eclipse Adoptium\jdk-25.0.5.8-hotspot` (the **rea CLI** needs 25+).
+- Set `GHIDRA_INSTALL_DIR` to the Ghidra dir. `JAVA_HOME` = **JDK 21** for running **Ghidra headless directly**;
+  `JAVA_HOME` = **JDK 25** for the **rea CLI**. (rea can't drive Ghidra for ARM on Windows, so the ARM images go
+  through Ghidra headless directly — see HANDOFF → Gotchas.)
 
 ## Controller (GD32) RE — the ride-mode speed-limit table (decompiled)
 
@@ -277,7 +282,9 @@ left in, so the architecture reads straight off the strings (`work/ghidra/displa
 - **Auth / security service**: `$NRF_DEVICE_AUTH_SUCCESSFUL`, `Request security setup or disconnect`
   (the `00002554` service).
 - **Region/mode default**: `EU CONF; CLASS 4 AS DEFAULT` / `US CONF; CLASS 1 AS DEFAULT` — the startup-mode
-  logic; the diff byte `0x3050c` flips this (stock EU mode 2→? ; reverse.bike → US mode 4).
+  logic; the diff byte `0x3050c` changes the stored default from `2` to `4`. (Mode 4 = EU EPAC per the
+  Ride-modes table; the exact units of this startup byte vs the region/class strings here are unverified —
+  do not read `0x3050c`'s `4` as "US".)
 - **Diff bytes string-confirmed**: `versions` lives at `0x3af00`; its final char is `0x3af07`
   (reverse.bike's `versionz`). `BLE control handler`, `[APP] GPREGRET2`, DFU via
   `Power management wants to reset to DFU mode` (buttonless `fe59`).
@@ -297,9 +304,11 @@ Targeted decompiles of these handlers → `work/ghidra/display-decomp.txt`.
       mode   = param[4];  if (mode  < 0x0C)  -> ctx[0x289]=mode; FUN_0002fff8(mode,3)  // CAN->controller
   }
   ```
-  - Field order light/assist/mode at bytes 2/3/4 ✓. Bounds: light<2, assist<5, **mode<12** (firmware
-    accepts 0–11, broader than the documented 0–8; the controller's mode table only maps 0–7 meaningfully,
-    with case 10≈case 4 EU-EPAC, case 9→25). Current mode is stored at `ctx+0x289`.
+  - Field order light/assist/mode at bytes 2/3/4 ✓. Bounds: light<2, assist<5, **mode<12** — i.e. the handler
+    *accepts* a write of 0–11, but the **valid ride-mode range is 0–7** (`super73-puck/docs/protocol.md`:
+    "never write mode ≥ 8"; **mode 4 = EU EPAC 25 km/h**, live-confirmed). Modes 8–11 are out-of-spec — the
+    controller's defined behaviour is the 0–7 table above; any handling of 8–11 is unverified and not relied on.
+    Current mode is stored at `ctx+0x289`.
   - Gate: `ctx[0x26]` must be 0 for the write to apply.
 - **`FUN_0002cda4` @0x2cda4 — security-service auth** (`$NRF_DEVICE_AUTH_SUCCESSFUL`): derives a **20-byte**
   (SHA-1-sized) expected value from a stored key (`DAT_0002cdf0`) and `memcmp`s (`FUN_00039548`, len 0x14)
@@ -343,11 +352,15 @@ Source: suffix-trie.github.io (Tenways CGO600, SW102 display, nRF52).
 
 ## Tooling status on this box (Windows 10, Flo's dev VM)
 
-- `rea` ("Reverse Engineer Anything") 6.9.0 runs after bumping Node 24.19 → **26.13.1** (winget LTS).
-  Drive it via its CLI (196 commands) — no Claude Code MCP registration/restart needed for that.
-- **JDK 17** present → Android (JADX) track works on Windows. **jadx 1.5.6** unpacked at `tools/jadx/`.
-- **Not installed:** Ghidra (need 12.x, set `GHIDRA_INSTALL_DIR`), Hopper, IDA, binwalk/unblob
-  (Linux-only in rea — but a Nordic DFU `.bin` is a raw Cortex-M image, so binwalk isn't needed for it).
+Current state (HANDOFF is canonical for environment detail):
+- **Ghidra 12.2** installed at `tools/ghidra-dist/ghidra_12.2_PUBLIC` (set `GHIDRA_INSTALL_DIR`). JDK **21**
+  (Ghidra headless) + JDK **25** (rea CLI) both present.
+- `rea` ("Reverse Engineer Anything") **6.9.0** on **Node 26.13**. Drive it via its CLI — no Claude Code MCP
+  registration/restart needed. **Caveat:** rea cannot drive Ghidra for ARM on Windows (its Windows Ghidra P0
+  rejects ARM ELF), so the nRF52/GD32 images use **Ghidra headless directly**; see HANDOFF → Gotchas.
+- **jadx 1.5.6** at `tools/jadx/` — the Android/APK track.
+- **Not installed:** Hopper (macOS-only), IDA, binwalk/unblob (Linux-only in rea — but a Nordic DFU `.bin` is a
+  raw Cortex-M image, so binwalk isn't needed for it).
 - No `adb` and no device visible from here.
 
 ## Prior art / references

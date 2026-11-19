@@ -10,7 +10,7 @@ target `T` by a bounded step **each control cycle**:
 
 ```
 if (ramp < T)      ramp += step_up        // per-mode (iVar18), or the base +0x14 (20) far from target
-else if (ramp > T) ramp -= step_down      // floored 50 (US) / 20 (EU) / 100 (throttle)
+else if (ramp > T) ramp -= step_down      // 2 (normal) / 50 (speed<4) / 100 (mode-flag)
 ```
 - Off-road throttle target: `T = throttle_raw - throttle_min - 250` (deadzone `0xfa` = 250).
 - `T` is in internal current-command units: operational ceiling ≈ **1250** (`0x4e2`, gated by a status
