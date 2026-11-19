@@ -64,18 +64,20 @@ Start here. Current state, environment, gotchas, next steps. Details in FINDINGS
 - rea needs Node ≥24.22.1/26.12.1 and, for its Ghidra checks, JDK ≥25 — both already satisfied.
 
 ## Next steps (for the fresh agent — ordered)
-0. **"Snappier takeoff" — the launch path is mapped; see `docs/launch-limiters.md`.** Finding: on a
+0. **"Snappier takeoff" — the launch path is mapped; see `docs/launch-limiters.md`.** **Scope is fixed:
+   unlimited (off-road) mode, throttle-only** — EPAC/mode 4, PAS and the `step=3` creep are out of scope
+   (never patched), and no speed-cap changes. Finding: on a
    *throttle* input, launch is NOT soft-limited by the ramp — the slew is already fast (410 step 110 /
    430 step 100 at standstill) and the target is throttle-proportional and generous at low speed. The
    `step=3` creep in 430 is the *pedal-assist* (no-throttle) path, not throttle. No speed-setpoint/accel
    ramp exists. The only low-speed current *reduction* is the over-current fold (speed<25 & I>1500 →
-   clamp 1250) — a stall/FET-thermal **protection**, not a comfort limiter. So to actually ship a
-   snappier-and-safe image we first need: **(a) which firmware is on the bike (410 vs 430) and which mode
-   the lag is in (throttle-off-road vs EPAC-pedal)** — user wasn't reachable this session (non-interactive,
-   question auto-denied); and **(b)** for 430 throttle, the SWD table (step 1); for a slow control loop, a
-   ramp step-*up* via `patch-controller-ramp.mjs` (safe/reversible/cap-free) is the fallback. No flash image
-   was shipped: a step-up is placebo if the loop is fast, and the fold is a protection. Deadzone is ruled
-   out by the user (not the issue).
+   clamp 1250) — a stall/FET-thermal **protection**, not a comfort limiter. Mode is settled (throttle-only
+   unlimited); the **one open fact** before shipping a snappier-and-safe image is **which firmware is on the
+   bike (410 vs 430)** — user not reachable this session (non-interactive, question auto-denied). Then:
+   for 430 throttle, the SWD table (step 1) sets launch magnitude; for a slow control loop, a ramp step-*up*
+   via `patch-controller-ramp.mjs` (safe/reversible/cap-free) is the fallback. No flash image was shipped:
+   a step-up is placebo if the loop is fast, and the fold is a protection. Deadzone is ruled out by the user
+   (not the issue).
 1. **SWD dump of the GD32 controller — the key blocker for the torque curve.** The actual 45-entry
    current-vs-speed table (and the whole `.data`/config region at flash `0x08009e8c`+) is **not** in any
    `.bin` we have (see State). It cannot be read over BT (`docs/can-protocol.md` — write-only bootloader).

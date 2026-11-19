@@ -1,5 +1,11 @@
 # What limits takeoff from a standstill (GD32 controller `410` & `430`)
 
+> **Modification scope (project-wide): unlimited (off-road) mode, throttle-only.** Every patch
+> considered here targets the **throttle** path in the unlimited modes (3 US / 7 EU). Pedal-assist /
+> EPAC (mode 4) and the PAS engagement + `step=3` creep are **out of scope** — analysed only to tell
+> them apart from the throttle path, never modified. Speed caps, the `0x9c4` (25 km/h) clamp and
+> road-legal mode 4 are never touched.
+
 Goal of this note: find the mechanism behind a sluggish/"not snappy" dead-start, and separate it
 from the throttle *ramp* (slew) already covered in [throttle-ramp.md](throttle-ramp.md). Two candidate
 mechanisms were checked head-on: **(1) a current limit that bites when starting from zero**, and

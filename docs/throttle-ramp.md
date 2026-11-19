@@ -1,8 +1,10 @@
 # Throttle dead-start ramp — calculation & patch notes (GD32 controller `410` stock & `430`)
 
 Scope: the throttle-from-standstill "start curve" in the **unlimited/off-road** modes (3 US / 7 EU).
-Pedal-assist is intentionally left alone. Source: `work/ghidra/controller-dump.txt` (`FUN_08005abc`
-mode logic + the rate limiter) and `work/ghidra/controller-insn.txt` (exact immediate offsets).
+Pedal-assist is intentionally left alone. **Project-wide this is the only modification scope: unlimited
+mode, throttle-only** — EPAC/mode 4 and PAS are never patched, and no speed-cap changes. Source:
+`work/ghidra/controller-dump.txt` (`FUN_08005abc` mode logic + the rate limiter) and
+`work/ghidra/controller-insn.txt` (exact immediate offsets).
 
 ## The ramp model
 The applied current/torque demand `ramp = *(ctx_0x08006778 + 0x14)` chases the instantaneous throttle
