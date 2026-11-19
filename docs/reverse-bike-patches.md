@@ -58,6 +58,30 @@ file off = addr − 0x3800.
 - The **speed roll-off disable** (`0x362c`) is exactly the top-end governor documented in
   `launch-limiters.md` (the `iVar17` speed scaling); this is the "unlimited" part, not the launch part.
 
+## 310 US vs 410 EU are the same firmware (decompiled & diffed)
+
+Confirmed by decompiling the 310 image (`work/ghidra/controller-310-dump.txt`, Ghidra headless at base
+`0x08003000` to match our 410/430 dumps) and diffing against 410:
+
+- **88 bytes differ out of 26,200 (0.3%); identical function set** (110 functions, same addresses).
+- The decompile reduces to **4 real differences, none in the control logic**:
+  1. market string `"EU"` ↔ `"US"` (`DAT_0800548c`, file `0x2450/0x2452`) — cosmetic.
+  2. **default boot mode `4` (EU) ↔ `3` (US)** at abs `0x080075f8` (file `0x45f8`): EU stock boots into
+     mode 4 (EPAC 25 km/h), US into mode 3 (off-road). The one behaviourally meaningful stock difference.
+  3. reported version `0x19a` (410) ↔ `0x136` (310) — the CAN version literal (~abs `0x08008c86`).
+  4. ~80 bytes of register-allocation shuffle in a shared param-init routine (`0x5470–0x5650`): decoded as
+     `movs rN`/`strb.w` Rt-field swaps with **identical immediates and identical destination offsets** —
+     behaviourally identical (one upstream value change cascaded the register allocator; verified it is
+     *not* a market calibration table).
+- **Every tuning-relevant routine is byte-identical**: FOC/Hall, torque polynomial, throttle rise-rate
+  steps (`0x2e4e/0x2e52`), q-axis current filter (`0x249a`), current-ceiling roll-off (`0x362c`), foldback,
+  mode function.
+
+**Consequence:** the 310 off-road patch above ports to 410 with certainty — the target bytes are the same.
+The only EU wrinkle, 410 booting into the restricted mode 4 (diff #2), is exactly what the patch's first
+entry ("initialize internal operating mode to 3") overrides, so a patched 410 behaves like a patched 310.
+Only the `3XX` version-report byte is not copied verbatim (410 keeps its `4XX`).
+
 ## 430: no published patch (consistent with our RAM-table finding)
 
 reverse.bike ships the **430 stock image** but there is **no `apps/kitchen/patches/SUPER73-RX-MCU-430/`** —
