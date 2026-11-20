@@ -20,8 +20,13 @@ Worked the performance angle + the reverse.bike reference. New docs this session
 - **`docs/current-limits.md`** — **the real performance lever** + the whole current map (see Next steps #0).
 - **BLE load current is NOT available.** POWER `0x0401` d6–d7 `charge_current` (Walker73/hasuper73) is an
   **unsigned charger** current — **tested ~0 under load (2026-11-20)**. Load monitoring must use **voltage
-  sag** (real pack voltage at POWER `0x0401` d2–d3, which hasuper73 does *not* read — it estimates from range),
-  an external meter, or a CAN tap. "Walker" = **Walker73** (AxelFougues), the BLE groundwork puck/HA build on.
+  sag** (real pack voltage at POWER `0x0401` d2–d5, read by hasuper73 since 0.2.0), an external meter, or a
+  CAN tap. "Walker" = **Walker73** (AxelFougues), the BLE groundwork puck/HA build on.
+- **hasuper73 0.3.0** (branch `feature/all-ble-sensors`, not merged/released; its `HANDOFF.md` is the
+  verification plan for an agent with HA access): every decodable BLE register as HA sensors —
+  versions from sdcfw's `0xFCFC`/`0xFAFA` (controller, battery, STM, nRF BL; app-auth = SHA-1(challenge ‖
+  20×`0xFF`), only if unauthenticated reads fail), real SoC `0x0402`, warnings `0x0200`, model/serial/region
+  `0x0210–0x0212`, module ID from adverts, plus disabled raw-frame sensors. Not yet run against the bike.
 
 ## State (2026-11-19) — session wrapped; the remaining work needs a fresh agent (see Next steps)
 - **Vendor OTA pull working + verified — all four MCUs.** `scripts/fetch-vendor-firmware.mjs` fetches the

@@ -31,3 +31,6 @@ Thumbs.db
 .DS_Store
 *.swp
 /work/ghidra/*.log
+
+# Scratch Python venv for import-checking hasuper73 against Home Assistant
+/work/havenv/

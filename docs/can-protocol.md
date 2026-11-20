@@ -20,6 +20,14 @@ BLE metrics in `super73-puck/docs/protocol.md` are CAN telemetry, re-exposed ove
 Notable correlation: the BLE register IDs `MOTION 0x0201`, `TOTAL 0x0202`, `RIDE 0x0203`, `POWER 0x0401`
 match CAN IDs `0x201/0x202/0x203/0x401` — the BLE register numbering mirrors the controller's CAN IDs.
 
+**A BLE register frame is the CAN frame passed through:** `[id_hi id_lo d0..d7]`, so BLE byte `d(n+2)` =
+CAN byte `d(n)`. Evidence: the backend decoders (`backend-config-register-map.md`) index `[0..7]` from the
+first byte after the ID and land exactly on these CAN fields (voltage `0x401` CAN d0–d3 = BLE d2–d5, odo
+`0x202` CAN d4–d7 = BLE d6–d9, range `0x203` CAN d6–d7 = BLE d8–d9), and the `0x203` handler writes its
+averaged value back *into the frame*, which only matters if the frame itself is forwarded. hasuper73 0.3.0
+decodes `0x200`, `0x0402`, `0x210–0x212` and the synthetic version registers `0xFCFC` / `0xFAFA` (sdcfw
+`packages/ble-utils/info.ts`) on this basis — **unconfirmed on the S2 until a live read**.
+
 ## Payload note
 In the decompiled handler the 8 CAN data bytes are `d0..d7`. Multi-byte fields are assembled in the
 firmware's own (often non-sequential) byte order; where a field spans bytes the table gives the
@@ -42,8 +50,8 @@ arithmetic — confirm against a live capture).
 | `0x212` | **region + default ride mode** | `d0,d1 == "EU"` → EU (region=2), **default mode 4**; else US (region=1); region string → `+0x5c` | high |
 | `0x266` | reg0x0D | `d1*100 + d2` | med |
 | `0x400` | status word + throttle state | `status = u16(d2,d3)`; bit `0x80`; drives throttle/screen state | med |
-| `0x401` | reg0xF, reg0x10 (odo / voltage?) | two 32-bit values | med |
-| `0x402` | assist level / gear | `reg0x11 = d0` (valid `d0 < 6`) | med |
+| `0x401` | reg0xF voltage, reg0x10 charge current | `u32 LE(d0..d3)` mV; `u32 LE(d4..d7)` mA (charger only) | high |
+| `0x402` | **battery state of charge %** (was misread as assist/gear) | `reg0x11 = d0`; `d0 < 6` (+ status `0x80` clear) → low-battery screen `0x17` | high |
 | `0x403` | reg0x12 | `u16(d0,d1)` | low |
 | `0x423` | keyed command | requires `d0=0x88`, `param8=0x88DD`, `d7=0xDD` → triggers an action | low |
 | `0x466` | reg0x0E | ASCII: `d5*100 + d6*10 + d7` | med |
