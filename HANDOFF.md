@@ -108,9 +108,16 @@ Worked the performance angle + the reverse.bike reference. New docs this session
      and `1500` as protections (`movw`/`cmp.w` 4-byte edits, encodings in `current-limits.md`). Real hardware
      risk (MOSFET/motor/BMS) — hold on moving `700` until (c) proves headroom.
 
-   Separately, the **off-road derestrict** is ready whenever wanted: `docs/reverse-bike-patches.md` has the
-   byte-verified 410 port (force mode 3, disable roll-off, rise-rate 150, q-axis filter). That is "unlimited",
-   **not** "more current" — a different goal from this thread.
+   **The bike already runs EU off-road mode 7 (NOT 25-capped) — Flo selects it via the puck.** So "unlimited"
+   speed is already had without a patch, and reverse.bike's off-road "force mode 3" / assist-remap are
+   redundant *and wrong-direction* (force-mode-3 would override mode 7 with the US mode 3 — do NOT apply it).
+   The one performance-relevant piece of that patch that still applies in mode 7 is **disable the mode 3/7
+   speed roll-off** (`0x362c`, `0c d2`→`00 bf`): even in mode 7 the current ceiling tapers with speed (the
+   `iVar17 = 475 − 1.25·speed` governors, `launch-limiters.md`), so disabling it gives more current at higher
+   speeds **within** the existing `1250`/`1875` peak — a **lower-risk** at-speed gain than raising the ceiling
+   (no new peak, but heavier sustained-current heat duty). So the perf menu, low→high risk: (1) disable
+   roll-off `0x362c` [reverse.bike-verified]; (2) raise the ceiling `0x4e2`/`0x753` [this thread, needs the
+   amps calibration]. The roll-off is itself a speed-dependent *current* limiting factor — already solved.
 1. **SWD dump of the GD32 controller — the key blocker for the torque curve.** The actual 45-entry
    current-vs-speed table (and the whole `.data`/config region at flash `0x08009e8c`+) is **not** in any
    `.bin` we have (see State). It cannot be read over BT (`docs/can-protocol.md` — write-only bootloader).
