@@ -88,13 +88,16 @@ So the field is **unsigned `u16 LE (d6–d7) ÷ 1000 = A`**, and it is **charge-
 as a negative, so **under load it very likely reads ~0** — i.e. it is probably the *charger* current, **not**
 the acceleration draw we want to monitor.
 
-**Verify before relying on it:** one full-throttle BLE read of `0x0401` d6–d7 — if it spikes, it's usable
-load current; if it stays ~0, it is charge-only. If charge-only, fall back to **voltage sag** as a load
-proxy: the *real* pack voltage is POWER `0x0401` **d2–d3** (`u16 LE` mV — confirmed 53.93 V on our S2; note
-hasuper73 does **not** read this, it *estimates* voltage from the range byte). More current → more sag, so
-logging d2–d3 under throttle indicates load even without amps. For true amps under load, an external meter
-(inline shunt / clamp on the battery leads) or a physical CAN tap is the reliable path. The BLE
-`charge_current` calibrates the `700` cutoff only if the step-1 check shows it moves under load.
+**Tested — it is charge-only (confirmed 2026-11-20).** A live full-throttle BLE read of `0x0401` d6–d7
+stayed ~0 under load: this field is the **charger** current, not the acceleration draw. **There is no usable
+load/battery-current telemetry over BT.** Do not plan the current-limit test around it.
+
+Fallbacks for load monitoring:
+- **Voltage sag** (cheapest, BT-only): log the *real* pack voltage at POWER `0x0401` **d2–d3** (`u16 LE` mV —
+  confirmed 53.93 V on our S2; hasuper73 does **not** read this, it *estimates* voltage from the range byte).
+  More current → more sag, so d2–d3 under throttle is a load indicator even without an amps number.
+- **External meter** (for true amps): inline shunt / clamp on the battery leads.
+- **Physical CAN tap**: the controller's own battery/motor current is on the bus; needs CAN-H/L access.
 
 It is *battery* current (the foldback's gating variable), not the motor-command units (`1250/1875`).
 
